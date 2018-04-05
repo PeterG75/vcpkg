@@ -110,11 +110,21 @@ namespace vcpkg::Commands::Hash
 {
     std::string get_file_hash(const VcpkgPaths& paths, const fs::path& path, const std::string& hash_type)
     {
+        const std::string hash_type_lowercase = Strings::ascii_to_lowercase(hash_type);
+
+        // Special case sha512. This is because we use cmake to hash, but cmake is a vcpkg dependency.
+        // This leads to a circular problem when trying to auto-download-and-hash cmake.
+        if (hash_type_lowercase == "sha512")
+        {
+            const std::string cmd_line = Strings::format(
+                R"(shasum -a 512 "%s" | awk '{ print $1 }')", path.u8string());
+            const auto ec_data = System::cmd_execute_and_capture_output(cmd_line);
+            Checks::check_exit(VCPKG_LINE_INFO, ec_data.exit_code == 0, "Running command:\n   %s\n failed", cmd_line);
+            return Strings::trim(std::string{ec_data.output});
+        }
+
         const std::string cmd_line = Strings::format(
-            R"("%s" -E %ssum "%s")",
-            paths.get_tool_exe(Tools::CMAKE).u8string(),
-            Strings::ascii_to_lowercase(hash_type),
-            path.u8string());
+            R"("%s" -E %ssum "%s")", paths.get_tool_exe(Tools::CMAKE).u8string(), hash_type_lowercase, path.u8string());
 
         const auto ec_data = System::cmd_execute_and_capture_output(cmd_line);
         Checks::check_exit(VCPKG_LINE_INFO, ec_data.exit_code == 0, "Running command:\n   %s\n failed", cmd_line);
